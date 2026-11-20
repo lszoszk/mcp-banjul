@@ -28,11 +28,13 @@ function metaLine(d) {
 }
 function findingsLine(d) {
   const f = [];
-  if (d.v.length) f.push(`violation: ${d.v.join(', ')}`);
-  if (d.nv.length) f.push(`no violation: ${d.nv.join(', ')}`);
+  const ev = (c) => (d.ev && d.ev[c] != null ? ` (para ${d.ev[c]})` : '');
+  if (d.v.length) f.push(`violation: ${d.v.map((c) => c + ev(c)).join(', ')}`);
+  if (d.nv.length) f.push(`no violation: ${d.nv.map((c) => c + ev(c)).join(', ')}`);
   const al = (d.al || []).filter((c) => !d.v.includes(c) && !d.nv.includes(c));
   if (al.length) f.push(`alleged, not decided: ${al.join(', ')}`);
-  return f.length ? `findings and allegations extracted from the text (a research aid): ${f.join('; ')}` : null;
+  const how = d.fs === 'reader' ? 'read from the whole decision by a language model, with the paragraph each rests on' : 'extracted from the operative part';
+  return f.length ? `findings (${how}) and allegations, a research aid: ${f.join('; ')}` : null;
 }
 
 const filterSchema = {
