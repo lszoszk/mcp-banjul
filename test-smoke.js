@@ -15,6 +15,9 @@ const calls = [
   ['banjul_search', { query: '"free legal assistance" violation:7', limit: 2 }],
   ['banjul_search', { query: '', body: 'Commission', article: '14', finding: 'violation', limit: 2 }],
   ['banjul_get_decision', { doc_id: 'AfCHPR-D604', operative_only: true }],
+  ['banjul_get_decision', { doc_id: 'AfCHPR-D72', to_para: 1 }],
+  ['banjul_search', { query: 'judge:"Ben Achour" reasonable time', limit: 1 }],
+  ['banjul_search', { query: 'torture type:merits', judge: 'Ouguergouz', limit: 1 }],
   ['banjul_check', { text: 'The Commission held that all rights "generate at least four levels of duties for a State that undertakes to adhere to a rights regime" (SERAC v Nigeria, Communication 155/96, para 44). See also Kenyan Citizens Forum v Kenya, Communication 999/19.' }],
 ];
 let failed = 0;

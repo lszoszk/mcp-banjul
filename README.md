@@ -14,10 +14,10 @@ and runs the same search, so an assistant and the website return the same result
 
 | Tool | Purpose |
 |---|---|
-| `banjul_search` | Paragraph-level full-text search: phrases, `OR`, `NOT`, `prefix*`, `violation:7`, `article:ICCPR-14`, `state:`, `case:`, `year:`, `body:`; filters for body, State, years, kind of decision, article and finding, operative part only, separate opinions, machine translations |
+| `banjul_search` | Paragraph-level full-text search: phrases, `OR`, `NOT`, `prefix*`, `violation:7`, `article:ICCPR-14`, `state:`, `case:`, `judge:`, `year:`, `body:`; filters for body, State, judge (separate opinions), years, kind of decision, article and finding, operative part only, separate opinions, machine translations |
 | `banjul_get_decision` | Metadata, extracted findings, separate opinions and the verbatim paragraphs of one decision (by paragraph range or the operative part) |
 | `banjul_check` | Finds the citations of the Commission and the Court in a text and checks the number, the name, the pinpointed paragraph and the quotation |
-| `banjul_facets` | Corpus size and the values the filters accept |
+| `banjul_facets` | Corpus size and the values the filters accept, including the judges who wrote separate opinions |
 
 ## Hosted connector (nothing to install)
 

@@ -23,7 +23,7 @@ const SOURCE_NOTE =
   "Corpus: decisions of the African Commission on Human and Peoples' Rights (from its library) and English judgments, rulings, orders and separate opinions of the African Court on Human and Peoples' Rights (from AJUDATA), split into their numbered paragraphs. Scanned decisions were read by OCR: check the PDF before quoting. ";
 
 function metaLine(d) {
-  return [d.t, d.num, d.st.join(', '), d.d ? dtext(d) : d.y, d.lang === 'fr' && !d.mt ? 'in French' : null,
+  return [d.au || d.t, d.num, d.st.join(', '), d.d ? dtext(d) : d.y, d.lang === 'fr' && !d.mt ? 'in French' : null,
     d.mt ? 'UNOFFICIAL MACHINE TRANSLATION from the French' : null].filter(Boolean).join(' · ');
 }
 function findingsLine(d) {
@@ -40,6 +40,7 @@ function findingsLine(d) {
 const filterSchema = {
   body: z.enum(['Commission', 'Court']).optional().describe('Only the African Commission or only the African Court.'),
   state: z.string().optional().describe('Respondent State, e.g. Tanzania, Kenya, "Côte d\'Ivoire".'),
+  judge: z.string().optional().describe('Separate opinions and declarations by a judge of the Court (surname), e.g. "Ben Achour", "Niyungeko", "Bensaoula".'),
   year_from: z.number().int().optional(),
   year_to: z.number().int().optional(),
   type: z.array(z.string()).optional().describe('Kinds of decision (substring match), e.g. ["merits"], ["provisional measures"], ["admissibility"], ["separate opinion"].'),
@@ -50,7 +51,7 @@ const filterSchema = {
   include_translations: z.boolean().default(false).describe('Include the unofficial English machine translations of the 47 French-only Commission decisions.'),
 };
 const toFilter = (a) => ({
-  body: a.body, state: a.state, year_from: a.year_from, year_to: a.year_to, types: a.type, article: a.article, finding: a.finding || 'any',
+  body: a.body, state: a.state, judge: a.judge, year_from: a.year_from, year_to: a.year_to, types: a.type, article: a.article, finding: a.finding || 'any',
   operative_only: a.operative_only, opinions: a.include_opinions !== false, decisions: true, translations: !!a.include_translations,
 });
 
@@ -60,7 +61,7 @@ export function buildServer() {
   server.registerTool('banjul_search', {
     title: 'Search the African Commission and Court (paragraph level)',
     description: SOURCE_NOTE +
-      'Full-text search over paragraphs. Query syntax as on the website: words must all appear in one paragraph; "exact phrase"; OR between alternatives; NOT word or -word; prefix* (at least 3 letters); field operators violation:7, nonviolation:2, article:7, alleged:7 (Charter; other instruments as violation:ICCPR-14), state:Kenya, case:245/02 or case:005/2013, year:2015-2020, body:court. Accents and capitals are ignored. An empty query lists decisions (newest first) matching the filters. Returns, for each hit, a citation with the paragraph number, the VERBATIM paragraph, the decision metadata and findings, the doc_id for banjul_get_decision, and links to the PDF page and to the website.',
+      'Full-text search over paragraphs. Query syntax as on the website: words must all appear in one paragraph; "exact phrase"; OR between alternatives; NOT word or -word; prefix* (at least 3 letters); field operators violation:7, nonviolation:2, article:7, alleged:7 (Charter; other instruments as violation:ICCPR-14), state:Kenya, case:245/02 or case:005/2013, judge:"Ben Achour" (separate opinions by a judge), year:2015-2020, body:court. Accents and capitals are ignored. An empty query lists decisions (newest first) matching the filters. Returns, for each hit, a citation with the paragraph number, the VERBATIM paragraph, the decision metadata and findings, the doc_id for banjul_get_decision, and links to the PDF page and to the website.',
     inputSchema: {
       query: z.string().default('').describe('e.g. "free legal assistance" violation:7, indigen* "ancestral land", expulsion state:Angola.'),
       group: z.enum(['decision', 'paragraph']).default('paragraph').describe('paragraph = best paragraphs across decisions; decision = one entry per decision with its best paragraphs.'),
@@ -74,6 +75,7 @@ export function buildServer() {
       await ready();
       const r = search(a.query, toFilter(a), a.sort || (a.query.trim() ? 'rel' : 'new'));
       const L = [];
+      if (r.P.notes.length) L.push(`Note: ${r.P.notes.join('; ')}.`, '');
       if (r.mode === 'docs') {
         L.push(`${r.docs.length} decisions match (no search words, so decisions are listed). Showing ${r.docs.length ? a.offset + 1 : 0}–${Math.min(r.docs.length, a.offset + a.limit)}.`, '');
         r.docs.slice(a.offset, a.offset + a.limit).forEach((d, k) => {
@@ -123,7 +125,7 @@ export function buildServer() {
       if (d.tr) L.push(`An unofficial English machine translation exists: doc_id ${d.tr}.`);
       if (d.dec && C.BY_ID[d.dec]) L.push(`Separate opinion on: ${citation(C.BY_ID[d.dec], null)} (doc_id ${d.dec})`);
       const ops = (C.OPS_OF[d.id] || []).map((i) => C.DOCS[i]);
-      if (ops.length) L.push(`Separate opinions: ${ops.map((o) => o.id).join(', ')}`);
+      if (ops.length) L.push(`Separate opinions: ${ops.map((o) => `${o.au || o.t} (doc_id ${o.id})`).join('; ')}`);
       L.push(`PDF: ${d.url} · website: ${app(d)} · text from ${d.src === 'ocr' ? 'OCR of a scan' : "the PDF's text layer"}`, '');
       const opOnly = a.operative_only && d.op >= 0;
       if (a.operative_only && d.op < 0) L.push('No operative part was detected in this decision; all paragraphs follow.');
@@ -176,7 +178,7 @@ export function buildServer() {
 
   server.registerTool('banjul_facets', {
     title: 'Corpus figures and filter values',
-    description: SOURCE_NOTE + 'Corpus size and the values the filters of banjul_search accept: bodies, kinds of decision, respondent States, articles with findings (with counts), years.',
+    description: SOURCE_NOTE + 'Corpus size and the values the filters of banjul_search accept: bodies, kinds of decision, respondent States, articles with findings (with counts), judges who wrote separate opinions, years.',
     inputSchema: {},
   }, async () => {
     try {
@@ -185,11 +187,12 @@ export function buildServer() {
       const cnt = (key) => { const m = {}; docs.forEach((d) => [].concat(key(d)).forEach((v) => { if (v) m[v] = (m[v] || 0) + 1; })); return Object.entries(m).sort((x, y) => y[1] - x[1]); };
       const ys = docs.map((d) => d.y).filter(Boolean);
       const L = [
-        `Corpus built ${C.INFO.built}: ${docs.length} documents, ${C.INFO.paras.toLocaleString('en')} paragraphs (including ${C.INFO.mt || 0} machine translations); years ${Math.min(...ys)}–${Math.max(...ys)}. Data loaded ${C.loadedAt.toISOString()}.`,
+        `Corpus built ${C.INFO.built}: ${docs.length} documents with ${docs.reduce((n, d) => n + d.c, 0).toLocaleString('en')} paragraphs, plus unofficial English machine translations of ${C.INFO.mt || 0} French-only Commission decisions; years ${Math.min(...ys)}–${Math.max(...ys)}. Data loaded ${C.loadedAt.toISOString()}.`,
         '', 'body: ' + cnt((d) => d.b).map(([k, n]) => `${k} (${n})`).join(', '),
         '', 'type: ' + cnt((d) => `${d.b}: ${d.t}`).map(([k, n]) => `${k} (${n})`).join('; '),
         '', 'state: ' + cnt((d) => d.st).map(([k, n]) => `${k} (${n})`).join(', '),
         '', 'article (decisions with a finding; Charter unless named): ' + cnt((d) => [...d.codes]).map(([k, n]) => `${k.replace(/^Charter /, '')} (${n})`).join(', '),
+        '', 'judge (separate opinions and declarations of the Court): ' + cnt((d) => (d.aus ? d.aus.split(' · ')[1].split(', ') : [])).map(([k, n]) => `${k} (${n})`).join(', '),
       ];
       return ok(L.join('\n'));
     } catch (e) { return errResult(`banjul_facets failed: ${e.message}`); }

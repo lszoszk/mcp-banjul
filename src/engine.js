@@ -46,7 +46,7 @@ export async function load() {
   const DOCS = data.docs;
   const BY_ID = {}, NUMIX = {}, OPS_OF = {};
   DOCS.forEach((d, i) => {
-    d.i = i; d.fst = fold(d.st.join(' | ')); d.fnum = fold(d.num + ' ' + d.id); d.codes = new Set([...d.v, ...d.nv]);
+    d.i = i; d.fst = fold(d.st.join(' | ')); d.fnum = fold(d.num + ' ' + d.id); d.fau = fold(d.au || ''); d.codes = new Set([...d.v, ...d.nv]);
     const [a, b] = d.name.split(' v '); d.appTok = nameTokens(a || ''); d.respFold = fold(b || '');
     BY_ID[d.id] = d;
     if (d.dec) (OPS_OF[d.dec] = OPS_OF[d.dec] || []).push(i);
@@ -83,7 +83,7 @@ function makeTerm(raw, phrase) {
   return { raw, phrase: phrase || words.length > 1, re: new RegExp(pat, 'g') };
 }
 export function parse(q) {
-  const out = { clauses: [], nots: [], art: [], viol: [], nonviol: [], alleged: [], state: [], cases: [], years: null, body: null };
+  const out = { clauses: [], nots: [], art: [], viol: [], nonviol: [], alleged: [], state: [], cases: [], judges: [], years: null, body: null, notes: [] };
   const re = /(-)?(?:([a-z]+):)?(?:"([^"]*)"?|([^\s"]+))/gi;
   let m, orNext = false, notNext = false;
   while ((m = re.exec(q))) {
@@ -103,8 +103,14 @@ export function parse(q) {
       }
       if (field === 'state') { out.state.push(fold(v)); continue; }
       if (field === 'case') { out.cases.push(fold(v)); continue; }
-      if (field === 'year') { const y = v.split('-').map(Number); out.years = [y[0], y[1] || y[0]]; continue; }
+      if (field === 'judge') { out.judges.push(fold(v)); continue; }
+      if (field === 'year') {
+        const y = /^(\d{4})(?:\s*[-–]\s*(\d{4}))?$/.exec(v);
+        if (!y) { out.notes.push(`year:${v} not understood, use year:2019 or year:2015-2020`); continue; }
+        const a = +y[1], b = y[2] ? +y[2] : a; out.years = [Math.min(a, b), Math.max(a, b)]; continue;
+      }
       if (field === 'body') { out.body = /^c(om|omm)/i.test(v) ? 'Commission' : /^c/i.test(v) ? 'Court' : null; continue; }
+      out.notes.push(`${field}: is not an operator, left out`); continue;
     }
     const t = makeTerm(field ? `${field}:${val}` : val, phrase);
     if (!t) continue;
@@ -124,6 +130,7 @@ function docPass(d, F, P) {
   if (F.types && F.types.length && !F.types.some((t) => fold(d.t).includes(fold(t)))) return false;
   if (F.lang && d.lang !== F.lang) return false;
   if (F.state && !d.fst.includes(fold(F.state))) return false;
+  if (F.judge && !d.fau.includes(fold(F.judge))) return false;
   if (F.year_from && (!d.y || d.y < F.year_from)) return false;
   if (F.year_to && (!d.y || d.y > F.year_to)) return false;
   const art = F.article ? artCode(F.article) : null;
@@ -134,6 +141,7 @@ function docPass(d, F, P) {
   if (P.years && (!d.y || d.y < P.years[0] || d.y > P.years[1])) return false;
   for (const s of P.state) if (!d.fst.includes(s)) return false;
   for (const c of P.cases) if (!d.fnum.includes(c)) return false;
+  for (const j of P.judges) if (!d.fau.includes(j)) return false;
   for (const g of P.viol) if (!g.every((c) => d.v.includes(c))) return false;
   for (const g of P.nonviol) if (!g.every((c) => d.nv.includes(c))) return false;
   for (const g of P.art) if (!g.every((c) => d.codes.has(c))) return false;
@@ -181,8 +189,10 @@ export function search(query, F, sort) {
 
 export function citation(d, row) {
   const num = d.num.replace('App. Nos.', 'App Nos').replace('App. No.', 'App No');
-  const type = d.t.charAt(0).toLowerCase() + d.t.slice(1);
+  const t0 = d.au || d.t, type = t0.charAt(0).toLowerCase() + t0.slice(1);  // a separate opinion: its kind and author
   const at = row ? (row[1] != null ? `, para ${row[1]}` : `, p ${row[2]}`) : '';
+  const par = d.kind === 'opinion' && d.dec && C.BY_ID[d.dec];
+  if (d.b === 'Court' && par) return `${d.name}, ${num}, ${BODY.Court}, ${par.t.charAt(0).toLowerCase() + par.t.slice(1)}${par.d ? ' of ' + dtext(par) : ''}, ${type}${at}.`;
   if (d.b === 'Court') return `${d.name}, ${num}, ${BODY.Court}, ${type}${d.d ? ' of ' + dtext(d) : ''}${at}.`;
   return `${d.name}, ${num}, ${BODY.Commission}, ${type}${d.y ? ' (' + d.y + ')' : ''}${at}${d.mt ? ' (unofficial machine translation from the French)' : ''}.`;
 }
