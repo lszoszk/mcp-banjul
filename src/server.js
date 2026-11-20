@@ -61,11 +61,11 @@ export function buildServer() {
   server.registerTool('banjul_search', {
     title: 'Search the African Commission and Court (paragraph level)',
     description: SOURCE_NOTE +
-      'Full-text search over paragraphs. Query syntax as on the website: words must all appear in one paragraph; "exact phrase"; OR between alternatives; NOT word or -word; prefix* (at least 3 letters); field operators violation:7, nonviolation:2, article:7, alleged:7 (Charter; other instruments as violation:ICCPR-14), state:Kenya, case:245/02 or case:005/2013, judge:"Ben Achour" (separate opinions by a judge), year:2015-2020, body:court. Accents and capitals are ignored. An empty query lists decisions (newest first) matching the filters. Returns, for each hit, a citation with the paragraph number, the VERBATIM paragraph, the decision metadata and findings, the doc_id for banjul_get_decision, and links to the PDF page and to the website.',
+      'Full-text search over paragraphs. Query syntax as on the website: words must all appear in one paragraph; "exact phrase"; OR between alternatives; NOT word or -word; prefix* (at least 3 letters); field operators violation:7, nonviolation:2, article:7, alleged:7 (Charter; other instruments as violation:ICCPR-14), state:Kenya, case:245/02 or case:005/2013, judge:"Ben Achour" (separate opinions by a judge), cites:155/96 or cites:"Alex Thomas" (decisions citing a decision), year:2015-2020, body:court. Accents and capitals are ignored. An empty query lists decisions (newest first) matching the filters. Returns, for each hit, a citation with the paragraph number, the VERBATIM paragraph, the decision metadata and findings, the doc_id for banjul_get_decision, and links to the PDF page and to the website.',
     inputSchema: {
       query: z.string().default('').describe('e.g. "free legal assistance" violation:7, indigen* "ancestral land", expulsion state:Angola.'),
       group: z.enum(['decision', 'paragraph']).default('paragraph').describe('paragraph = best paragraphs across decisions; decision = one entry per decision with its best paragraphs.'),
-      sort: z.enum(['rel', 'new', 'old']).optional().describe('rel = relevance (default with words), new = newest first, old = oldest first.'),
+      sort: z.enum(['rel', 'new', 'old', 'cited']).optional().describe('rel = relevance (default with words), new = newest first, old = oldest first, cited = most cited by other decisions first (leading cases).'),
       limit: z.number().int().min(1).max(50).default(10),
       offset: z.number().int().min(0).default(0),
       ...filterSchema,
@@ -106,7 +106,7 @@ export function buildServer() {
 
   server.registerTool('banjul_get_decision', {
     title: 'Get a decision: metadata, findings and verbatim paragraphs',
-    description: SOURCE_NOTE + 'Full record of one decision by doc_id (from banjul_search): metadata, findings, separate opinions or the decision an opinion belongs to, and the VERBATIM paragraphs, optionally a range of paragraph numbers or the operative part only. Long decisions are returned in pages of at most 80 paragraphs: use from_para.',
+    description: SOURCE_NOTE + 'Full record of one decision by doc_id (from banjul_search): metadata, findings, separate opinions or the decision an opinion belongs to, the decisions it cites and that cite it (with paragraphs), and the VERBATIM paragraphs, optionally a range of paragraph numbers or the operative part only. Long decisions are returned in pages of at most 80 paragraphs: use from_para.',
     inputSchema: {
       doc_id: z.string().describe('e.g. AfCHPR-D604 or ACHPR-ohebxf4guq-0'),
       from_para: z.number().int().optional().describe('First paragraph number to return.'),
@@ -126,6 +126,10 @@ export function buildServer() {
       if (d.dec && C.BY_ID[d.dec]) L.push(`Separate opinion on: ${citation(C.BY_ID[d.dec], null)} (doc_id ${d.dec})`);
       const ops = (C.OPS_OF[d.id] || []).map((i) => C.DOCS[i]);
       if (ops.length) L.push(`Separate opinions: ${ops.map((o) => `${o.au || o.t} (doc_id ${o.id})`).join('; ')}`);
+      const lab = (o, k) => { const row = C.PARAS[o.s + k]; return row ? (row[1] != null ? `para ${row[1]}` : `p. ${row[2]}`) : ''; };
+      const short = (o) => `${o.name}, ${o.t.toLowerCase()}${o.y ? ', ' + o.y : ''} (doc_id ${o.id})`;
+      if (d.ct && d.ct.length) L.push(`Cites ${d.ct.length} decision(s) of the Commission or the Court (found automatically): ${d.ct.slice(0, 40).map(([b, ks]) => `${short(C.DOCS[b])} in ${ks.map((k) => lab(d, k)).join(', ')}`).join('; ')}${d.ct.length > 40 ? '; …' : ''}`);
+      if (d.cb && d.cb.length) L.push(`Cited by ${d.cb.length} decision(s) (found automatically): ${d.cb.slice(0, 40).map(([a, ks]) => `${short(C.DOCS[a])} at ${ks.map((k) => lab(C.DOCS[a], k)).join(', ')}`).join('; ')}${d.cb.length > 40 ? '; …' : ''}`);
       L.push(`PDF: ${d.url} · website: ${app(d)} · text from ${d.src === 'ocr' ? 'OCR of a scan' : "the PDF's text layer"}`, '');
       const opOnly = a.operative_only && d.op >= 0;
       if (a.operative_only && d.op < 0) L.push('No operative part was detected in this decision; all paragraphs follow.');
@@ -178,7 +182,7 @@ export function buildServer() {
 
   server.registerTool('banjul_facets', {
     title: 'Corpus figures and filter values',
-    description: SOURCE_NOTE + 'Corpus size and the values the filters of banjul_search accept: bodies, kinds of decision, respondent States, articles with findings (with counts), judges who wrote separate opinions, years.',
+    description: SOURCE_NOTE + 'Corpus size and the values the filters of banjul_search accept: bodies, kinds of decision, respondent States, articles with findings (with counts), the most cited decisions, judges who wrote separate opinions, years.',
     inputSchema: {},
   }, async () => {
     try {
@@ -192,6 +196,7 @@ export function buildServer() {
         '', 'type: ' + cnt((d) => `${d.b}: ${d.t}`).map(([k, n]) => `${k} (${n})`).join('; '),
         '', 'state: ' + cnt((d) => d.st).map(([k, n]) => `${k} (${n})`).join(', '),
         '', 'article (decisions with a finding; Charter unless named): ' + cnt((d) => [...d.codes]).map(([k, n]) => `${k.replace(/^Charter /, '')} (${n})`).join(', '),
+        '', 'most cited (decisions citing them): ' + docs.filter((d) => d.ncb).sort((a, b) => b.ncb - a.ncb).slice(0, 15).map((d) => `${d.name}, ${d.t.toLowerCase()}, ${d.y} [${d.id}] (${d.ncb})`).join('; '),
         '', 'judge (separate opinions and declarations of the Court): ' + cnt((d) => (d.aus ? d.aus.split(' · ')[1].split(', ') : [])).map(([k, n]) => `${k} (${n})`).join(', '),
       ];
       return ok(L.join('\n'));

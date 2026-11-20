@@ -52,6 +52,7 @@ export async function load() {
     if (d.dec) (OPS_OF[d.dec] = OPS_OF[d.dec] || []).push(i);
     if (!d.mt) d.num.replace(/^(App\. Nos?\.|Communications?)\s*/, '').split(/,\s*/).forEach((n) => { if (n) (NUMIX[n] = NUMIX[n] || []).push(i); });
   });
+  DOCS.forEach((d) => { d.ncb = (d.cb || []).length; d.fct = fold((d.ct || []).map(([b]) => DOCS[b].num + ' ' + DOCS[b].name).join(' | ')); });
   Object.assign(C, { DOCS, HEADS: data.heads, INFO: data.info, KNOWN: data.known || {}, PARAS, FOLD, BY_ID, NUMIX, OPS_OF, loadedAt: new Date() });
   return C;
 }
@@ -83,7 +84,7 @@ function makeTerm(raw, phrase) {
   return { raw, phrase: phrase || words.length > 1, re: new RegExp(pat, 'g') };
 }
 export function parse(q) {
-  const out = { clauses: [], nots: [], art: [], viol: [], nonviol: [], alleged: [], state: [], cases: [], judges: [], years: null, body: null, notes: [] };
+  const out = { clauses: [], nots: [], art: [], viol: [], nonviol: [], alleged: [], state: [], cases: [], judges: [], cites: [], years: null, body: null, notes: [] };
   const re = /(-)?(?:([a-z]+):)?(?:"([^"]*)"?|([^\s"]+))/gi;
   let m, orNext = false, notNext = false;
   while ((m = re.exec(q))) {
@@ -104,6 +105,7 @@ export function parse(q) {
       if (field === 'state') { out.state.push(fold(v)); continue; }
       if (field === 'case') { out.cases.push(fold(v)); continue; }
       if (field === 'judge') { out.judges.push(fold(v)); continue; }
+      if (field === 'cites') { out.cites.push(fold(v)); continue; }
       if (field === 'year') {
         const y = /^(\d{4})(?:\s*[-–]\s*(\d{4}))?$/.exec(v);
         if (!y) { out.notes.push(`year:${v} not understood, use year:2019 or year:2015-2020`); continue; }
@@ -142,6 +144,7 @@ function docPass(d, F, P) {
   for (const s of P.state) if (!d.fst.includes(s)) return false;
   for (const c of P.cases) if (!d.fnum.includes(c)) return false;
   for (const j of P.judges) if (!d.fau.includes(j)) return false;
+  for (const c of P.cites) if (!d.fct.includes(c)) return false;
   for (const g of P.viol) if (!g.every((c) => d.v.includes(c))) return false;
   for (const g of P.nonviol) if (!g.every((c) => d.nv.includes(c))) return false;
   for (const g of P.art) if (!g.every((c) => d.codes.has(c))) return false;
@@ -155,7 +158,7 @@ export function search(query, F, sort) {
   const docs = C.DOCS.filter((d) => docPass(d, F, P));
   const text = P.clauses.length > 0 || P.nots.length > 0;
   if (!text) {
-    const list = docs.slice(); if (sort === 'old') list.reverse();
+    const list = docs.slice(); if (sort === 'old') list.reverse(); else if (sort === 'cited') list.sort((a, b) => (b.ncb - a.ncb) || (a.i - b.i));
     return { mode: 'docs', docs: list, P };
   }
   const hits = [];
@@ -181,9 +184,11 @@ export function search(query, F, sort) {
   for (const h of hits) { if (!byDoc.has(h.d.i)) byDoc.set(h.d.i, { d: h.d, hits: [], best: 0 }); const g = byDoc.get(h.d.i); g.hits.push(h); g.best = Math.max(g.best, h.score); }
   const groups = [...byDoc.values()];
   const by = sort || 'rel';
-  hits.sort((a, b) => by === 'rel' ? (b.score - a.score) || (a.d.i - b.d.i) || (a.i - b.i) : by === 'new' ? (a.d.i - b.d.i) || (a.i - b.i) : (b.d.i - a.d.i) || (a.i - b.i));
-  groups.forEach((g) => g.hits.sort((a, b) => by === 'rel' ? (b.score - a.score) || (a.i - b.i) : a.i - b.i));
-  groups.sort((a, b) => by === 'rel' ? (b.best - a.best) || (b.hits.length - a.hits.length) || (a.d.i - b.d.i) : by === 'new' ? a.d.i - b.d.i : b.d.i - a.d.i);
+  hits.sort((a, b) => by === 'rel' ? (b.score - a.score) || (a.d.i - b.d.i) || (a.i - b.i) : by === 'new' ? (a.d.i - b.d.i) || (a.i - b.i)
+    : by === 'cited' ? (b.d.ncb - a.d.ncb) || (b.score - a.score) || (a.i - b.i) : (b.d.i - a.d.i) || (a.i - b.i));
+  groups.forEach((g) => g.hits.sort((a, b) => by === 'rel' || by === 'cited' ? (b.score - a.score) || (a.i - b.i) : a.i - b.i));
+  groups.sort((a, b) => by === 'rel' ? (b.best - a.best) || (b.hits.length - a.hits.length) || (a.d.i - b.d.i) : by === 'new' ? a.d.i - b.d.i
+    : by === 'cited' ? (b.d.ncb - a.d.ncb) || (b.best - a.best) || (a.d.i - b.d.i) : b.d.i - a.d.i);
   return { mode: 'paras', hits, groups, P };
 }
 
