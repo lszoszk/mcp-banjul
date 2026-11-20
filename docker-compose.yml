@@ -1,0 +1,18 @@
+# MCP_AUTH_TOKEN=<token> docker compose up -d --build
+# Host networking: binds 127.0.0.1:8015 (nginx exposes it at /banjul-mcp/). Loads its data from GitHub Pages
+# at start and refreshes it every 6 hours.
+services:
+  mcp-banjul-http:
+    build: .
+    image: mcp-banjul-http:latest
+    container_name: mcp-banjul-http
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      - HOST=127.0.0.1
+      - PORT=8015
+      - DATA_BASE=${DATA_BASE:-https://lszoszk.github.io/banjul-researcher/}
+      - MCP_PUBLIC_PREFIX=/banjul-mcp
+      - MCP_AUTH_TOKEN=${MCP_AUTH_TOKEN:-}
+    mem_limit: 768m
+    mem_reservation: 256m

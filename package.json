@@ -1,0 +1,24 @@
+{
+  "name": "mcp-banjul",
+  "version": "1.0.0",
+  "description": "MCP server for Banjul Researcher: paragraph-level search over the decisions of the African Commission and the African Court on Human and Peoples' Rights, verbatim paragraphs with citations, citation check.",
+  "type": "module",
+  "bin": {
+    "mcp-banjul": "index.js"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "start:http": "node http.js",
+    "test": "node test-smoke.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "express": "^5.2.1",
+    "zod": "^3.23.8"
+  },
+  "author": "Łukasz Szoszkiewicz",
+  "license": "PolyForm-Noncommercial-1.0.0"
+}
