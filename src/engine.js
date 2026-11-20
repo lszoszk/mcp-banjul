@@ -83,7 +83,7 @@ function makeTerm(raw, phrase) {
   return { raw, phrase: phrase || words.length > 1, re: new RegExp(pat, 'g') };
 }
 export function parse(q) {
-  const out = { clauses: [], nots: [], art: [], viol: [], nonviol: [], state: [], cases: [], years: null, body: null };
+  const out = { clauses: [], nots: [], art: [], viol: [], nonviol: [], alleged: [], state: [], cases: [], years: null, body: null };
   const re = /(-)?(?:([a-z]+):)?(?:"([^"]*)"?|([^\s"]+))/gi;
   let m, orNext = false, notNext = false;
   while ((m = re.exec(q))) {
@@ -96,9 +96,9 @@ export function parse(q) {
     }
     if (field) {
       const v = val.trim();
-      if (field === 'violation' || field === 'nonviolation' || field === 'article') {
+      if (field === 'violation' || field === 'nonviolation' || field === 'article' || field === 'alleged') {
         const codes = v.split('+').map(artCode).filter(Boolean);
-        if (codes.length) (field === 'violation' ? out.viol : field === 'nonviolation' ? out.nonviol : out.art).push(codes);
+        if (codes.length) (field === 'violation' ? out.viol : field === 'nonviolation' ? out.nonviol : field === 'alleged' ? out.alleged : out.art).push(codes);
         continue;
       }
       if (field === 'state') { out.state.push(fold(v)); continue; }
@@ -128,8 +128,8 @@ function docPass(d, F, P) {
   if (F.year_to && (!d.y || d.y > F.year_to)) return false;
   const art = F.article ? artCode(F.article) : null;
   if (art) {
-    if (F.finding === 'violation' ? !d.v.includes(art) : F.finding === 'no_violation' ? !d.nv.includes(art) : !d.codes.has(art)) return false;
-  } else if (F.finding === 'violation' && !d.v.length) return false; else if (F.finding === 'no_violation' && !d.nv.length) return false;
+    if (F.finding === 'violation' ? !d.v.includes(art) : F.finding === 'no_violation' ? !d.nv.includes(art) : F.finding === 'alleged' ? !(d.al || []).includes(art) : !d.codes.has(art)) return false;
+  } else if (F.finding === 'violation' && !d.v.length) return false; else if (F.finding === 'no_violation' && !d.nv.length) return false; else if (F.finding === 'alleged' && !(d.al || []).length) return false;
   if (P.body && d.b !== P.body) return false;
   if (P.years && (!d.y || d.y < P.years[0] || d.y > P.years[1])) return false;
   for (const s of P.state) if (!d.fst.includes(s)) return false;
@@ -137,6 +137,7 @@ function docPass(d, F, P) {
   for (const g of P.viol) if (!g.every((c) => d.v.includes(c))) return false;
   for (const g of P.nonviol) if (!g.every((c) => d.nv.includes(c))) return false;
   for (const g of P.art) if (!g.every((c) => d.codes.has(c))) return false;
+  for (const g of P.alleged) if (!g.every((c) => (d.al || []).includes(c))) return false;
   return true;
 }
 const countMatches = (re, s) => { re.lastIndex = 0; let n = 0; while (re.exec(s) && n < 6) n++; return n; };

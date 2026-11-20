@@ -30,7 +30,9 @@ function findingsLine(d) {
   const f = [];
   if (d.v.length) f.push(`violation: ${d.v.join(', ')}`);
   if (d.nv.length) f.push(`no violation: ${d.nv.join(', ')}`);
-  return f.length ? `findings extracted from the operative part (a research aid): ${f.join('; ')}` : null;
+  const al = (d.al || []).filter((c) => !d.v.includes(c) && !d.nv.includes(c));
+  if (al.length) f.push(`alleged, not decided: ${al.join(', ')}`);
+  return f.length ? `findings and allegations extracted from the text (a research aid): ${f.join('; ')}` : null;
 }
 
 const filterSchema = {
@@ -40,7 +42,7 @@ const filterSchema = {
   year_to: z.number().int().optional(),
   type: z.array(z.string()).optional().describe('Kinds of decision (substring match), e.g. ["merits"], ["provisional measures"], ["admissibility"], ["separate opinion"].'),
   article: z.string().optional().describe('An article with a finding, e.g. "7" (African Charter), "ICCPR-14", "Maputo-4", "ACDEG-17".'),
-  finding: z.enum(['any', 'violation', 'no_violation']).default('any').describe('With article: violation found, no violation found, or either.'),
+  finding: z.enum(['any', 'violation', 'no_violation', 'alleged']).default('any').describe('With article: violation found, no violation found, either, or alleged (claimed by the complainant or ruled on).'),
   operative_only: z.boolean().default(false).describe('Search only the operative parts.'),
   include_opinions: z.boolean().default(true).describe('Include separate opinions of the Court.'),
   include_translations: z.boolean().default(false).describe('Include the unofficial English machine translations of the 47 French-only Commission decisions.'),
@@ -56,7 +58,7 @@ export function buildServer() {
   server.registerTool('banjul_search', {
     title: 'Search the African Commission and Court (paragraph level)',
     description: SOURCE_NOTE +
-      'Full-text search over paragraphs. Query syntax as on the website: words must all appear in one paragraph; "exact phrase"; OR between alternatives; NOT word or -word; prefix* (at least 3 letters); field operators violation:7, nonviolation:2, article:7 (Charter; other instruments as violation:ICCPR-14), state:Kenya, case:245/02 or case:005/2013, year:2015-2020, body:court. Accents and capitals are ignored. An empty query lists decisions (newest first) matching the filters. Returns, for each hit, a citation with the paragraph number, the VERBATIM paragraph, the decision metadata and findings, the doc_id for banjul_get_decision, and links to the PDF page and to the website.',
+      'Full-text search over paragraphs. Query syntax as on the website: words must all appear in one paragraph; "exact phrase"; OR between alternatives; NOT word or -word; prefix* (at least 3 letters); field operators violation:7, nonviolation:2, article:7, alleged:7 (Charter; other instruments as violation:ICCPR-14), state:Kenya, case:245/02 or case:005/2013, year:2015-2020, body:court. Accents and capitals are ignored. An empty query lists decisions (newest first) matching the filters. Returns, for each hit, a citation with the paragraph number, the VERBATIM paragraph, the decision metadata and findings, the doc_id for banjul_get_decision, and links to the PDF page and to the website.',
     inputSchema: {
       query: z.string().default('').describe('e.g. "free legal assistance" violation:7, indigen* "ancestral land", expulsion state:Angola.'),
       group: z.enum(['decision', 'paragraph']).default('paragraph').describe('paragraph = best paragraphs across decisions; decision = one entry per decision with its best paragraphs.'),
